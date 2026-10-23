@@ -1,9 +1,9 @@
 {
   "destinations": [
     {
-      "id": "patch-notes",
-      "name": "패치노트",
-      "channel_env": "PATCH_NOTES_CHANNEL",
+      "id": "tech-news",
+      "name": "Tech News",
+      "channel_env": "TECH_NEWS_CHANNEL",
       "format": "daily-forum",
       "slots": [9],
       "top": 5,

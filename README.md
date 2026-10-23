@@ -1,7 +1,9 @@
+<p align="center"><img src="docs/images/logo.png" width="160" alt="Scouty 캐릭터"></p>
+
 <h1 align="center">Scouty</h1>
 
 여러 출처에서 소식을 모아, 디스코드 채널마다 정해진 시각에 정리해 올려 주는 봇입니다.
-첫 목적지는 친구들 개발 서버의 **패치노트** 포럼으로, 매일 아침 9시에 날짜별 글 하나를 올립니다.
+첫 목적지는 친구들 개발 서버의 **#tech-news** 포럼으로, 매일 아침 9시에 `10/24 (토) Tech News` 같은 날짜별 글 하나를 올립니다.
 
 - **🔥 오늘의 TOP 5**: 긱뉴스·Hacker News·Reddit에서 지난 24시간 동안 반응이 컸던 글. 같은 원문은 하나로 묶고, 여러 커뮤니티에 올라왔으면 순위를 올립니다.
 - **📢 공식 발표·릴리스**: OpenAI·Google AI 블로그, Claude Code·Codex 새 버전.

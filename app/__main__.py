@@ -1,6 +1,6 @@
 """Scouty: 여러 출처에서 소식을 모아 목적지(디스코드 채널)마다 정해진 시각에 올린다.
 
-목적지는 config/destinations.json에 있다. 지금 형식은 daily-forum(날짜별 포럼 글) 하나.
+목적지는 config/destinations.json에 있다 (첫 목적지: 친구들 개발 서버의 #tech-news). 지금 형식은 daily-forum(날짜별 포럼 글) 하나.
 """
 import argparse
 import json
