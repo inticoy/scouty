@@ -9,7 +9,19 @@
       "top": 5,
       "community": ["geeknews", "hackernews", "reddit"],
       "official": ["openai", "google-ai", "claude-code", "codex"],
-      "videos": ["UCQNE2JmbasNYbjGAcuBiRRg"],
+      "videos": {
+        "조코딩": "UCQNE2JmbasNYbjGAcuBiRRg",
+        "노마드 코더": "UCUpJs89fSBXNolQGOYKn0YQ",
+        "MKBHD": "UCBJycsmduvYEL83R_U4JriQ",
+        "Linus Tech Tips": "UCXuqSBlHAE6Xw-yeJA0Tunw",
+        "Mrwhosetheboss": "UCMiJRAwDNSNzuYeN2uWa0pA",
+        "Dave2D": "UCVYamHliCI9rw1tHR1xbkfw",
+        "The Verge": "UCddiUEpeqJcYeBxX1IVBKvQ",
+        "Fireship": "UCsBjURrPoezykLs9EqgamOA",
+        "ThePrimeTime": "UCUyeluBRhGPCW4rPe_UvBZQ",
+        "Theo - t3.gg": "UCbRP3c757lWg9M-U7TyEkXA",
+        "Two Minute Papers": "UCbfYPyITQ-7l4upoX8nvctg"
+      },
       "reddit": ["ClaudeAI", "ChatGPTCoding", "vibecoding", "LocalLLaMA"]
     }
   ]

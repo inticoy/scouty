@@ -58,10 +58,13 @@ def top(items: list, n: int, exclude: set) -> list:
 
 
 _PROMPT = """개발자 친구들 디스코드에 올릴 오늘의 IT·개발 소식이야. 각 항목을 한국어로 정리해.
-- title: 무슨 소식인지 바로 알 수 있는 한국어 제목. 40자 이내. 제품·회사 이름은 원래 표기 그대로.
-- summary: 핵심을 한국어 한 문장으로. 60자 이내. 과장하지 말고, 모르는 내용은 지어내지 마.
+- title: 무슨 소식인지 바로 알 수 있는 한국어 제목. 40자 이내. 제품·회사·API 이름은 원문 철자를 한 글자도 바꾸지 말고 그대로 써.
+- summary: text를 읽고 "그래서 뭐가 새롭거나 흥미로운지"를 한국어 한 문장으로. 60자 이내.
+  "~에 대한 글입니다", "최신 업데이트입니다"처럼 제목을 되풀이하는 말은 쓰지 마. text에 없는 내용은 지어내지 마.
+  릴리스 노트면 눈에 띄는 새 기능이나 변경 한두 개를 이름으로 짚어.
 - relevant: 개발·IT·AI·스타트업·테크 업계 소식이면 true. 정치·연예·일반 사회 뉴스처럼 개발자와 상관없으면 false.
-릴리스 노트면 눈에 띄는 변경 한두 개만 짚어.
+- major: kind가 official일 때만 의미 있어. 새 모델·새 제품·새 API·가격 변경처럼 개발자들이 이야기할 만한 큰 발표면 true.
+  파트너십, 고객 사례, 행사, 엔지니어링 블로그, 정책 글은 false.
 
 items: {items}"""
 
@@ -70,15 +73,15 @@ _SCHEMA = {
     "properties": {"items": {"type": "array", "items": {
         "type": "object",
         "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "summary": {"type": "string"},
-                       "relevant": {"type": "boolean"}},
-        "required": ["id", "title", "summary", "relevant"],
+                       "relevant": {"type": "boolean"}, "major": {"type": "boolean"}},
+        "required": ["id", "title", "summary", "relevant", "major"],
     }}},
     "required": ["items"],
 }
 
 
 def summarize(entries: list[dict]) -> dict[str, dict]:
-    """entries: id, title. {id: {title, summary, relevant}}. 실패하면 빈 dict (원래 제목으로 올린다)."""
+    """entries: id, kind(community/official), title, text. {id: {title, summary, relevant, major}}. 실패하면 빈 dict (원래 제목으로 올린다)."""
     if not entries or not os.environ.get("GEMINI_API_KEY"):
         return {}
     from google import genai

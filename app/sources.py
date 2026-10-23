@@ -110,14 +110,17 @@ def _feed(url: str, source: str, since: datetime) -> list:
         if entry.tag == "item":
             title, link = entry.findtext("title"), entry.findtext("link")
             published = _date(entry.findtext("pubDate"))
+            body = entry.findtext("description") or ""
         else:
             title = entry.findtext(f"{ATOM}title")
             link_el = entry.find(f"{ATOM}link")
             link = link_el.get("href") if link_el is not None else None
             published = _date(entry.findtext(f"{ATOM}published") or entry.findtext(f"{ATOM}updated"))
+            body = entry.findtext(f"{ATOM}content") or entry.findtext(f"{ATOM}summary") or ""
         if title and link and published and published >= since:
+            text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", unescape(body))).strip()[:800]
             items.append({"id": link, "source": source, "title": title.strip(), "url": link, "discuss": None,
-                          "points": 0, "comments": 0, "published": published, "rank": len(items)})
+                          "points": 0, "comments": 0, "published": published, "rank": len(items), "text": text})
     return items
 
 
@@ -139,9 +142,10 @@ def codex(since: datetime, **_) -> list:
             if not re.search(r"alpha|beta|rc", i["title"], re.I)][:1]
 
 
-def youtube(since: datetime, channels: list = (), **_) -> list:
+def youtube(since: datetime, channels: dict | list = (), **_) -> list:
+    """새 영상, 조회수 많은 순. channels: {이름: 채널 ID} (이름은 설정에서 알아보기 쉬우라고)."""
     items = []
-    for channel in channels:
+    for channel in (channels.values() if isinstance(channels, dict) else channels):
         try:
             root = ET.fromstring(_get("https://www.youtube.com/feeds/videos.xml", channel_id=channel).content)
         except Exception as exc:
@@ -152,10 +156,12 @@ def youtube(since: datetime, channels: list = (), **_) -> list:
             published = _date(entry.findtext(f"{ATOM}published"))
             if published and published >= since:
                 url = entry.find(f"{ATOM}link").get("href")
+                stats = entry.find(f"{MEDIA}group/{MEDIA}community/{MEDIA}statistics")
                 items.append({"id": url, "source": "youtube", "author": author,
                               "title": entry.findtext(f"{ATOM}title"), "url": url, "discuss": None,
-                              "points": 0, "comments": 0, "published": published, "rank": len(items),
-                              "short": "/shorts/" in url})
+                              "points": int(stats.get("views", 0)) if stats is not None else 0, "comments": 0,
+                              "published": published, "rank": 0, "short": "/shorts/" in url})
+    items.sort(key=lambda i: i["points"], reverse=True)
     return items
 
 

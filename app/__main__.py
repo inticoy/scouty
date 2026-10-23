@@ -9,11 +9,12 @@ import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from . import digest, discord, sources
+from . import digest, discord, pages, sources
 from .sources import SOURCE_NAMES
 from .store import KST, Store
 
@@ -21,9 +22,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 CONFIG = Path("config/destinations.json")
+PREVIEW = Path("data/preview.json")  # --dry-run 결과 (미리보기 페이지용)
 LATE_LIMIT = timedelta(hours=3)  # Actions가 늦게 돌아도 이 안이면 그 시간대 글을 올린다
 DAYS_KO = ["월", "화", "수", "목", "금", "토", "일"]
-MAX_MESSAGE = 1900
+RANK_EMOJI = {1: "🥇", 2: "🥈", 3: "🥉", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣"}
+RELEASES = {"claude-code", "codex"}  # 릴리스는 늘 싣고, 블로그 글은 큰 발표만
+MAX_OFFICIAL, MAX_VIDEOS = 4, 3
+# 카드 왼쪽 띠 색: 캐릭터의 민트 별, 남색 모자, 유튜브 빨강
+COLOR = {"top": 0x2EC4B6, "official": 0x3B4A7A, "videos": 0xFF3B3B}
+MORE = [("긱뉴스", "https://news.hada.io/"), ("Hacker News", "https://news.ycombinator.com/")]
 
 
 def destinations() -> list[dict]:
@@ -41,8 +48,23 @@ def _reaction(item: dict) -> str:
     return f"[{name}{stats}](<{item['discuss']}>)" if item.get("discuss") else name + stats
 
 
-def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[str], list[str]] | None:
-    """(글 제목, 메시지들, 올렸다고 기록할 키). 올릴 게 없으면 None."""
+def _section(text: str, image: str | None) -> dict:
+    """글 한 줄 카드. 썸네일이 있으면 오른쪽에 붙인다."""
+    if not image:
+        return {"type": 10, "content": text}
+    return {"type": 9, "components": [{"type": 10, "content": text}],
+            "accessory": {"type": 11, "media": {"url": quote(image, safe=":/?&=%#+,;@~!$'()*[]")}}}
+
+
+def _container(title: str, cards: list[dict], color: int, extra: list[dict] = ()) -> dict:
+    items = [{"type": 10, "content": title}]
+    for card in cards:
+        items += [{"type": 14, "divider": True, "spacing": 1}, card]
+    return {"type": 17, "accent_color": color, "components": items + list(extra)}
+
+
+def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], list[str]] | None:
+    """(글 제목, 메시지 payload들, 올렸다고 기록할 키). 올릴 게 없으면 None."""
     since = now - timedelta(hours=24)
     community, failed = sources.collect(dest["community"], since, subreddits=dest.get("reddit", []))
     official, failed2 = sources.collect(dest.get("official", []), since)
@@ -54,56 +76,57 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[str], list
     n = dest.get("top", 5)
     candidates = digest.top(community, n * 3, exclude)  # 개발과 상관없는 글을 Gemini가 걸러낼 여유
     official = [i for i in official if digest.url_key(i["url"]) not in exclude]
-    videos = [i for i in videos if digest.url_key(i["url"]) not in exclude]
+    videos = [i for i in videos if digest.url_key(i["url"]) not in exclude][:MAX_VIDEOS]
     if not (candidates or official):
         return None
 
-    entries = [{"id": g["key"], "title": g["head"]["title"]} for g in candidates]
-    entries += [{"id": digest.url_key(i["url"]), "title": f"{SOURCE_NAMES[i['source']]}: {i['title']}"} for i in official]
+    page = pages.previews([g["head"]["url"] for g in candidates] + [i["url"] for i in official + videos])
+    entries = [{"id": g["key"], "kind": "community", "title": g["head"]["title"],
+                "text": page[g["head"]["url"]]["description"]} for g in candidates]
+    entries += [{"id": digest.url_key(i["url"]), "kind": "official", "title": f"{SOURCE_NAMES[i['source']]}: {i['title']}",
+                 "text": i.get("text") or page[i["url"]]["description"]} for i in official]
     ko = digest.summarize(entries)
     picks = [g for g in candidates if ko.get(g["key"], {}).get("relevant", True)][:n]
+    official = [i for i in official if i["source"] in RELEASES
+                or ko.get(digest.url_key(i["url"]), {}).get("major", False)][:MAX_OFFICIAL]
 
-    lines = [f"## 🔥 오늘의 TOP {len(picks)}"] if picks else []
-    for n, g in enumerate(picks, 1):
-        head, info = g["head"], ko.get(g["key"], {})
-        lines.append(f"**{n}. [{_link_text(info.get('title') or head['title'])}](<{head['url']}>)**")
-        if info.get("summary"):
-            lines.append(info["summary"])
-        lines.append("-# " + " · ".join(_reaction(i) for i in sorted(g["members"], key=lambda i: -i["points"])))
-    first = "\n".join(lines)
+    title = f"{now.month}/{now.day} ({DAYS_KO[now.weekday()]}) {dest['name']}"
+    messages = []
+    if picks:
+        cards = []
+        for rank, g in enumerate(picks, 1):
+            head, info = g["head"], ko.get(g["key"], {})
+            lines = [f"{RANK_EMOJI.get(rank, f'{rank}.')} **[{_link_text(info.get('title') or head['title'])}](<{head['url']}>)**"]
+            if info.get("summary"):
+                lines.append(info["summary"])
+            lines.append("-# " + " · ".join(_reaction(i) for i in sorted(g["members"], key=lambda i: -i["points"])))
+            cards.append(_section("\n".join(lines), page[head["url"]]["image"]))
+        buttons = {"type": 1, "components": [{"type": 2, "style": 5, "label": f"{label} 더 보기", "url": url}
+                                              for label, url in MORE]}
+        messages.append({"components": [
+            {"type": 10, "content": f"## 📰 {title}\n-# 지난 24시간 커뮤니티에서 반응이 컸던 소식 TOP {len(picks)}"},
+            _container(f"### 🔥 오늘의 TOP {len(picks)}", cards, COLOR["top"],
+                       [{"type": 14, "divider": False, "spacing": 1}, buttons])]})
 
     rest = []
     if official:
-        rest.append("## 📢 공식 발표·릴리스")
+        cards = []
         for i in official:
             info = ko.get(digest.url_key(i["url"]), {})
-            rest.append(f"- **{SOURCE_NAMES[i['source']]}** [{_link_text(info.get('title') or i['title'])}](<{i['url']}>)")
+            text = f"**{SOURCE_NAMES[i['source']]}** · [{_link_text(info.get('title') or i['title'])}](<{i['url']}>)"
             if info.get("summary"):
-                rest.append(f"  -# {info['summary']}")
+                text += f"\n-# {info['summary']}"
+            cards.append(_section(text, None if i["source"] in RELEASES else page[i["url"]]["image"]))
+        rest.append(_container("### 📢 공식 발표·릴리스", cards, COLOR["official"]))
     if videos:
-        rest.append("## 📺 새 영상")
-        rest += [f"- {i['author']} · [{_link_text(i['title'])}](<{i['url']}>){' (쇼츠)' if i.get('short') else ''}" for i in videos]
-    rest.append("-# 번호로 이야기해 주세요. 예: \"2번 써봤는데…\"")
+        cards = [_section(f"[{_link_text(i['title'])}](<{i['url']}>)\n-# {i['author']}{' · 쇼츠' if i.get('short') else ''} · 👀 {i['points']:,}",
+                          page[i["url"]]["image"]) for i in videos]
+        rest.append(_container("### 📺 새 영상", cards, COLOR["videos"]))
+    rest.append({"type": 10, "content": "-# 번호로 이야기해 주세요. 예: \"2번 써봤는데…\""})
+    messages.append({"components": rest})
 
-    messages = _split([first] if first else []) + _split(["\n".join(rest)])
-    title = f"{now.month}/{now.day} ({DAYS_KO[now.weekday()]}) {dest['name']}"
     keys = [g["key"] for g in picks] + [digest.url_key(i["url"]) for i in official + videos]
     return title, messages, keys
-
-
-def _split(blocks: list[str]) -> list[str]:
-    """2000자 제한에 맞춰 줄 단위로 나눈다."""
-    out = []
-    for block in blocks:
-        current = ""
-        for line in block.split("\n"):
-            if len(current) + len(line) + 1 > MAX_MESSAGE:
-                out.append(current)
-                current = ""
-            current += ("\n" if current else "") + line
-        if current:
-            out.append(current)
-    return out
 
 
 def post(dest: dict, store: Store, dry_run: bool) -> bool:
@@ -113,7 +136,9 @@ def post(dest: dict, store: Store, dry_run: bool) -> bool:
         return False
     title, messages, keys = built
     if dry_run:
-        print(f"[DRY RUN] {title}\n" + "\n\n----- (다음 메시지) -----\n".join(messages))
+        PREVIEW.parent.mkdir(parents=True, exist_ok=True)
+        PREVIEW.write_text(json.dumps({"title": title, "messages": messages}, ensure_ascii=False, indent=1))
+        print(f"[DRY RUN] {title}: {len(messages)} messages → {PREVIEW}")
         return True
     channel = os.environ[dest["channel_env"]]
     thread = discord.create_post(channel, title, messages, dest.get("tags"))
