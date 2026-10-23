@@ -45,9 +45,9 @@ def _date(text: str | None) -> datetime | None:
 
 # ── 커뮤니티 (반응 수로 순위) ──────────────────────────
 def geeknews(since: datetime, until: datetime | None = None, **_) -> list:
-    # 지난 날짜로 만들 때는 그 전날의 '지난 뉴스' 페이지를 읽는다
+    # 지난 날짜로 만들 때는 그 기간이 대부분 걸친 날의 '지난 뉴스' 페이지를 읽는다 (21시 글이면 그날, 9시 글이면 전날)
     if until and until < datetime.now(KST) - timedelta(hours=12):
-        resp = _get("https://news.hada.io/past", day=f"{since:%Y-%m-%d}")
+        resp = _get("https://news.hada.io/past", day=f"{until - timedelta(hours=12):%Y-%m-%d}")
     else:
         resp = _get("https://news.hada.io/")
     soup = BeautifulSoup(resp.text, "html.parser")

@@ -3,7 +3,7 @@
 <h1 align="center">Scouty</h1>
 
 여러 출처에서 소식을 모아, 디스코드 채널마다 정해진 시각에 정리해 올려 주는 봇입니다.
-첫 목적지는 친구들 개발 서버의 **#tech-news** 포럼으로, 매일 아침 9시에 `10/24 (토) Tech News` 같은 날짜별 글 하나를 올립니다.
+첫 목적지는 친구들 개발 서버의 **#tech-news** 포럼으로, 매일 밤 9시에 날짜별 글 하나를 올립니다. 글 제목에는 그날 꼭 알아야 할 소식(헤드라인)이 들어갑니다.
 
 - **🔥 오늘의 TOP 5**: 긱뉴스·Hacker News·Reddit에서 지난 24시간 동안 반응이 컸던 글. 같은 원문은 하나로 묶고, 여러 커뮤니티에 올라왔으면 순위를 올립니다.
 - **📢 공식 발표·릴리스**: OpenAI·Google AI 블로그, Claude Code·Codex 새 버전.
@@ -30,8 +30,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env                    # 봇 토큰·채널 ID·Gemini 키
 .venv/bin/python -m app post --dry-run  # 전송 없이 오늘 글 미리 보기
 .venv/bin/python -m app post            # 지금 바로 올리기
+.venv/bin/python -m app post --date 2026-10-18  # 지난 날짜로 만들기 (그날 21시 기준 24시간)
 ```
 
-GitHub Actions(`.github/workflows/cycle.yml`)가 9·10·11시에 확인해 아직 안 올렸으면 올립니다. 비밀값 `ENV_FILE`에 `.env` 내용을 넣습니다.
+GitHub Actions(`.github/workflows/cycle.yml`)가 21·22·23시에 확인해 아직 안 올렸으면 올립니다. 비밀값 `ENV_FILE`에 `.env` 내용을 넣습니다.
 
 Python 3.14 · requests · BeautifulSoup · Gemini · Discord REST.

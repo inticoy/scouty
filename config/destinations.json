@@ -5,7 +5,7 @@
       "name": "Tech News",
       "channel_env": "TECH_NEWS_CHANNEL",
       "format": "daily-forum",
-      "slots": [9],
+      "slots": [21],
       "top": 5,
       "community": ["geeknews", "hackernews", "reddit"],
       "official": ["openai", "google-ai", "claude-code", "codex"],
