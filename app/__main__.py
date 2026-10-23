@@ -45,7 +45,7 @@ def _reaction(item: dict) -> str:
     name = SOURCE_NAMES[item["source"]] + (f" r/{item['sub']}" if item.get("sub") else "")
     stats = "".join(x for x in (f" ▲{item['points']}" if item["points"] else "",
                                  f" 💬{item['comments']}" if item["comments"] else ""))
-    return f"[{name}{stats}](<{item['discuss']}>)" if item.get("discuss") else name + stats
+    return f"[{name}{stats}]({item["discuss"]})" if item.get("discuss") else name + stats
 
 
 def _section(text: str, image: str | None) -> dict:
@@ -97,7 +97,7 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
         cards = []
         for rank, g in enumerate(picks, 1):
             head, info = g["head"], ko.get(g["key"], {})
-            lines = [f"{RANK_EMOJI.get(rank, f'{rank}.')} **[{_link_text(info.get('title') or head['title'])}](<{head['url']}>)**"]
+            lines = [f"{RANK_EMOJI.get(rank, f'{rank}.')} **[{_link_text(info.get('title') or head['title'])}]({head['url']})**"]
             if info.get("summary"):
                 lines.append(info["summary"])
             lines.append("-# " + " · ".join(_reaction(i) for i in sorted(g["members"], key=lambda i: -i["points"])))
@@ -114,13 +114,13 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
         cards = []
         for i in official:
             info = ko.get(digest.url_key(i["url"]), {})
-            text = f"**{SOURCE_NAMES[i['source']]}** · [{_link_text(info.get('title') or i['title'])}](<{i['url']}>)"
+            text = f"**{SOURCE_NAMES[i['source']]}** · [{_link_text(info.get('title') or i['title'])}]({i['url']})"
             if info.get("summary"):
                 text += f"\n-# {info['summary']}"
             cards.append(_section(text, None if i["source"] in RELEASES else page[i["url"]]["image"]))
         rest.append(_container("### 📢 공식 발표·릴리스", cards, COLOR["official"]))
     if videos:
-        cards = [_section(f"[{_link_text(i['title'])}](<{i['url']}>)\n-# {i['author']}{' · 쇼츠' if i.get('short') else ''} · 👀 {i['points']:,}",
+        cards = [_section(f"[{_link_text(i['title'])}]({i['url']})\n-# {i['author']}{' · 쇼츠' if i.get('short') else ''} · 👀 {i['points']:,}",
                           page[i["url"]]["image"]) for i in videos]
         rest.append(_container("### 📺 새 영상", cards, COLOR["videos"]))
     rest.append({"type": 10, "content": "-# 번호로 이야기해 주세요. 예: \"2번 써봤는데…\""})
