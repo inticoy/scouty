@@ -66,24 +66,36 @@ _PROMPT = """개발자 친구들 디스코드에 올릴 오늘의 IT·개발 소
 - major: kind가 official일 때만 의미 있어. 새 모델·새 제품·새 API·가격 변경처럼 개발자들이 이야기할 만한 큰 발표면 true.
   파트너십, 고객 사례, 행사, 엔지니어링 블로그, 정책 글은 false.
 
+headline: 오늘 개발자 친구들이 절대 놓치면 안 되는 소식 하나를 relevant인 항목 중에서 골라.
+OpenAI·ChatGPT·Codex나 Anthropic·Claude의 새 모델·제품·큰 변화가 있으면 그것을 고르고, 없으면 커뮤니티에서 가장 화제인 소식을 골라.
+- id: 고른 항목의 id
+- title: 글 제목에 쓸 아주 짧은 한국어 헤드라인. 25자 이내, 마침표 없이.
+- line: 왜 중요한지 한국어 한 문장. 60자 이내.
+
 items: {items}"""
 
 _SCHEMA = {
     "type": "object",
-    "properties": {"items": {"type": "array", "items": {
+    "properties": {"headline": {"type": "object", "properties": {
+        "id": {"type": "string"}, "title": {"type": "string"}, "line": {"type": "string"}},
+        "required": ["id", "title", "line"]},
+                   "items": {"type": "array", "items": {
         "type": "object",
         "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "summary": {"type": "string"},
                        "relevant": {"type": "boolean"}, "major": {"type": "boolean"}},
         "required": ["id", "title", "summary", "relevant", "major"],
     }}},
-    "required": ["items"],
+    "required": ["items", "headline"],
 }
 
 
-def summarize(entries: list[dict]) -> dict[str, dict]:
-    """entries: id, kind(community/official), title, text. {id: {title, summary, relevant, major}}. 실패하면 빈 dict (원래 제목으로 올린다)."""
+def summarize(entries: list[dict]) -> tuple[dict[str, dict], dict | None]:
+    """entries: id, kind(community/official), title, text. ({id: {title, summary, relevant, major}}, headline).
+
+    실패하면 ({}, None): 원래 제목으로, 헤드라인 없이 올린다.
+    """
     if not entries or not os.environ.get("GEMINI_API_KEY"):
-        return {}
+        return {}, None
     from google import genai
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 90_000})  # ms
     prompt = _PROMPT.format(items=json.dumps(entries, ensure_ascii=False))
@@ -91,8 +103,9 @@ def summarize(entries: list[dict]) -> dict[str, dict]:
         try:
             resp = client.models.generate_content(model=model, contents=prompt, config={
                 "response_mime_type": "application/json", "response_schema": _SCHEMA})
-            return {i["id"]: i for i in json.loads(resp.text)["items"]}
+            data = json.loads(resp.text)
+            return {i["id"]: i for i in data["items"]}, data.get("headline")
         except Exception as exc:
-            logger.warning("summarize with %s failed: %s", model, exc)
-    return {}
+            logger.warning("summarize with %s failed: %s", model, str(exc)[:200])
+    return {}, None
 

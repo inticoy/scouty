@@ -45,7 +45,8 @@ def _reaction(item: dict) -> str:
     name = SOURCE_NAMES[item["source"]] + (f" r/{item['sub']}" if item.get("sub") else "")
     stats = "".join(x for x in (f" ▲{item['points']}" if item["points"] else "",
                                  f" 💬{item['comments']}" if item["comments"] else ""))
-    return f"[{name}{stats}]({item["discuss"]})" if item.get("discuss") else name + stats
+    # 링크 글자에 💬 같은 이모지가 있으면 디스코드가 링크로 읽지 않아서, 숫자는 링크 밖에 둔다
+    return f"[{name}]({item['discuss']}){stats}" if item.get("discuss") else name + stats
 
 
 def _section(text: str, image: str | None) -> dict:
@@ -86,12 +87,18 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
                 "text": page[g["head"]["url"]]["description"]} for g in candidates]
     entries += [{"id": digest.url_key(i["url"]), "kind": "official", "title": f"{SOURCE_NAMES[i['source']]}: {i['title']}",
                  "text": i.get("text") or page[i["url"]]["description"]} for i in official]
-    ko = digest.summarize(entries)
+    ko, headline = digest.summarize(entries)
     picks = [g for g in candidates if ko.get(g["key"], {}).get("relevant", True)][:n]
+    lead_pick = next((g for g in candidates if headline and g["key"] == headline["id"]), None)
+    if lead_pick and lead_pick not in picks:  # 헤드라인으로 고른 소식은 TOP에 꼭 들어가게 (맨 아래 대신)
+        picks = picks[:n - 1] + [lead_pick]
     official = [i for i in official if i["source"] in RELEASES
                 or ko.get(digest.url_key(i["url"]), {}).get("major", False)][:MAX_OFFICIAL]
 
-    title = f"{now.month}/{now.day} ({DAYS_KO[now.weekday()]}) {dest['name']}"
+    date = f"{now.month}/{now.day} ({DAYS_KO[now.weekday()]})"
+    # 글 제목에 오늘 꼭 알아야 할 소식을 넣어, 포럼 목록만 봐도 알 수 있게
+    title = f"{date} {headline['title']}" if headline else f"{date} {dest['name']}"
+    lead = f"\n> 📌 **{headline['title']}** — {headline['line']}" if headline else ""
     messages = []
     if picks:
         cards = []
@@ -105,7 +112,7 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
         buttons = {"type": 1, "components": [{"type": 2, "style": 5, "label": f"{label} 더 보기", "url": url}
                                               for label, url in MORE]}
         messages.append({"components": [
-            {"type": 10, "content": f"## 📰 {title}\n-# 지난 24시간 커뮤니티에서 반응이 컸던 소식 TOP {len(picks)}"},
+            {"type": 10, "content": f"## 📰 {date} {dest['name']}{lead}\n-# 지난 24시간 커뮤니티에서 반응이 컸던 소식 TOP {len(picks)}"},
             _container(f"### 🔥 오늘의 TOP {len(picks)}", cards, COLOR["top"],
                        [{"type": 14, "divider": False, "spacing": 1}, buttons])]})
 
