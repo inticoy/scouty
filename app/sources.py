@@ -44,8 +44,13 @@ def _date(text: str | None) -> datetime | None:
 
 
 # ── 커뮤니티 (반응 수로 순위) ──────────────────────────
-def geeknews(since: datetime, **_) -> list:
-    soup = BeautifulSoup(_get("https://news.hada.io/").text, "html.parser")
+def geeknews(since: datetime, until: datetime | None = None, **_) -> list:
+    # 지난 날짜로 만들 때는 그 전날의 '지난 뉴스' 페이지를 읽는다
+    if until and until < datetime.now(KST) - timedelta(hours=12):
+        resp = _get("https://news.hada.io/past", day=f"{since:%Y-%m-%d}")
+    else:
+        resp = _get("https://news.hada.io/")
+    soup = BeautifulSoup(resp.text, "html.parser")
     items = []
     for rank, row in enumerate(soup.select("div.topic_row")):
         topic_id = row.get("data-topic-state-id")
@@ -64,9 +69,11 @@ def geeknews(since: datetime, **_) -> list:
     return [i for i in items if i["published"] is None or i["published"] >= since]
 
 
-def hackernews(since: datetime, **_) -> list:
-    data = _get("https://hn.algolia.com/api/v1/search", tags="story", hitsPerPage=40,
-                numericFilters=f"created_at_i>{int(since.timestamp())},points>30").json()
+def hackernews(since: datetime, until: datetime | None = None, **_) -> list:
+    filters = f"created_at_i>{int(since.timestamp())},points>30"
+    if until:
+        filters += f",created_at_i<{int(until.timestamp())}"
+    data = _get("https://hn.algolia.com/api/v1/search", tags="story", hitsPerPage=40, numericFilters=filters).json()
     hits = sorted(data["hits"], key=lambda h: h.get("points") or 0, reverse=True)
     return [{"id": h["objectID"], "source": "hackernews", "title": h["title"],
              "url": h.get("url") or f"https://news.ycombinator.com/item?id={h['objectID']}",
@@ -76,9 +83,11 @@ def hackernews(since: datetime, **_) -> list:
             for rank, h in enumerate(hits)]
 
 
-def reddit(since: datetime, subreddits: list = (), **_) -> list:
+def reddit(since: datetime, subreddits: list = (), until: datetime | None = None, **_) -> list:
     """RSS에는 추천 수가 없어서 '오늘 TOP' 순서를 순위로 쓴다. 서브레딧 하나가 막혀도 나머지는 읽는다."""
     items = []
+    if until and until < datetime.now(KST) - timedelta(hours=12):
+        return items  # 지난 날짜의 TOP은 RSS로 알 수 없다
     for n, sub in enumerate(subreddits):
         if n:
             time.sleep(3)  # 연달아 부르면 429
@@ -169,12 +178,14 @@ SOURCES = {"geeknews": geeknews, "hackernews": hackernews, "reddit": reddit, "op
            "google-ai": google_ai, "claude-code": claude_code, "codex": codex, "youtube": youtube}
 
 
-def collect(names: list, since: datetime, **options) -> tuple[list, list]:
-    """(items, 실패한 출처). 출처 하나가 실패해도 나머지는 모은다."""
+def collect(names: list, since: datetime, until: datetime | None = None, **options) -> tuple[list, list]:
+    """(items, 실패한 출처). 출처 하나가 실패해도 나머지는 모은다. until은 지난 날짜로 만들 때만."""
     items, failed = [], []
     for name in names:
         try:
-            got = SOURCES[name](since, **options)
+            got = SOURCES[name](since, until=until, **options)
+            if until:
+                got = [i for i in got if i["published"] is None or i["published"] < until]
             logger.info("%s: %d", name, len(got))
             items += got
         except Exception as exc:

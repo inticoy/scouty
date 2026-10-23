@@ -66,9 +66,10 @@ def _container(title: str, cards: list[dict], color: int, extra: list[dict] = ()
 def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], list[str]] | None:
     """(글 제목, 메시지 payload들, 올렸다고 기록할 키). 올릴 게 없으면 None."""
     since = now - timedelta(hours=24)
-    community, failed = sources.collect(dest["community"], since, subreddits=dest.get("reddit", []))
-    official, failed2 = sources.collect(dest.get("official", []), since)
-    videos, failed3 = sources.collect(["youtube"] if dest.get("videos") else [], since, channels=dest.get("videos", []))
+    until = now if now < datetime.now(KST) - timedelta(hours=1) else None  # 지난 날짜로 만들 때
+    community, failed = sources.collect(dest["community"], since, until, subreddits=dest.get("reddit", []))
+    official, failed2 = sources.collect(dest.get("official", []), since, until)
+    videos, failed3 = sources.collect(["youtube"] if dest.get("videos") else [], since, until, channels=dest.get("videos", {}))
     if failed + failed2 + failed3:
         logger.warning("failed sources: %s", failed + failed2 + failed3)
 
@@ -129,8 +130,8 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
     return title, messages, keys
 
 
-def post(dest: dict, store: Store, dry_run: bool) -> bool:
-    built = build(dest, store, datetime.now(KST))
+def post(dest: dict, store: Store, dry_run: bool, now: datetime | None = None) -> bool:
+    built = build(dest, store, now or datetime.now(KST))
     if built is None:
         logger.warning("%s — 올릴 소식 없음", dest["name"])
         return False
@@ -177,6 +178,7 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("post", help="지금 바로 올리기 (시험용)")
     p.add_argument("ids", nargs="*", help="목적지 id (없으면 전부)")
+    p.add_argument("--date", help="지난 날짜로 만들기 YYYY-MM-DD (그날 첫 시각 기준 24시간)")
     p.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -187,7 +189,10 @@ def main():
         store = Store()
         for dest in destinations():
             if not args.ids or dest["id"] in args.ids:
-                post(dest, store, args.dry_run)
+                now = None
+                if args.date:
+                    now = datetime.strptime(args.date, "%Y-%m-%d").replace(hour=dest["slots"][0], tzinfo=KST)
+                post(dest, store, args.dry_run, now)
     else:
         parser.print_help()
 
