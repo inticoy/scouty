@@ -1,0 +1,63 @@
+# Scouty: 정해진 시각(KST)이 된 목적지에 소식 글을 올린다. 시각과 목적지는 config/destinations.json.
+# GitHub schedule은 늦거나 빠질 수 있어서 9시 글을 9·10·11시에 세 번 확인한다 (이미 올렸으면 건너뜀).
+name: cycle
+
+on:
+  schedule:
+    - cron: "5 0,1,2 * * *" # 09:05·10:05·11:05 KST
+  workflow_dispatch:
+
+concurrency:
+  group: scouty
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write # 지난 상태 캐시 지우기
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # 올린 소식·시간대 기록은 매번 새 키로 저장하고 가장 최근 것을 복원한다
+      - name: Restore state
+        uses: actions/cache/restore@v6
+        with:
+          path: data/scoot.db
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+
+      - name: Write config
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: printf '%s\n' "$ENV_FILE" > .env
+
+      - name: Cycle
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python -m app cycle
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: data/scoot.db
+          key: state-${{ github.run_id }}
+
+      - name: Prune old caches
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --key state- --sort created_at --order desc --limit 100 --json id --jq '.[3:][].id' |
+            xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY" || true

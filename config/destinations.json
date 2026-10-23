@@ -1,0 +1,16 @@
+{
+  "destinations": [
+    {
+      "id": "patch-notes",
+      "name": "패치노트",
+      "channel_env": "PATCH_NOTES_CHANNEL",
+      "format": "daily-forum",
+      "slots": [9],
+      "top": 5,
+      "community": ["geeknews", "hackernews", "reddit"],
+      "official": ["openai", "google-ai", "claude-code", "codex"],
+      "videos": ["UCQNE2JmbasNYbjGAcuBiRRg"],
+      "reddit": ["ClaudeAI", "ChatGPTCoding", "vibecoding", "LocalLLaMA"]
+    }
+  ]
+}

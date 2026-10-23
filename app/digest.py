@@ -1,0 +1,95 @@
+"""커뮤니티 소식 묶기·순위, Gemini 한국어 요약."""
+import json
+import logging
+import os
+from urllib.parse import urlsplit
+
+logger = logging.getLogger(__name__)
+
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite")
+# 출처 안에서 1위는 1.0, 아래로 갈수록 줄어든다. 레딧은 추천 수를 몰라 순서만 보니 조금 낮게
+WEIGHT = {"hackernews": 1.0, "geeknews": 1.0, "reddit": 0.7}
+CROSS_BONUS = 0.4  # 다른 커뮤니티에도 올라왔으면 화제성이 높다
+MAX_PER_SOURCE = 3
+
+
+def url_key(url: str) -> str:
+    parts = urlsplit(url)
+    host = parts.netloc.lower().removeprefix("www.").removeprefix("m.")
+    path = parts.path.rstrip("/")
+    if "youtube.com" in host or "news.hada.io" in host or "ycombinator" in host:
+        return f"{host}{path}?{parts.query}"
+    return f"{host}{path}"
+
+
+def group(items: list) -> list:
+    """같은 원문 링크는 하나로 묶는다. 묶음: key, head, members, sources, score."""
+    groups: dict[str, dict] = {}
+    for item in items:
+        key = url_key(item["url"])
+        g = groups.setdefault(key, {"key": key, "members": []})
+        g["members"].append(item)
+    counts = {s: sum(1 for i in items if i["source"] == s) for s in WEIGHT}
+    for g in groups.values():
+        scores = []
+        for item in g["members"]:
+            n = max(counts.get(item["source"], 1), 1)
+            scores.append(WEIGHT.get(item["source"], 0.5) * (1 - item["rank"] / (n + 1)))
+        g["sources"] = sorted({i["source"] for i in g["members"]})
+        g["score"] = max(scores) + CROSS_BONUS * (len(g["sources"]) - 1)
+        g["head"] = max(g["members"], key=lambda i: (i["source"] == "geeknews", i["points"]))  # 한국어 제목 우선
+    return sorted(groups.values(), key=lambda g: g["score"], reverse=True)
+
+
+def top(items: list, n: int, exclude: set) -> list:
+    picks, per_source = [], {}
+    for g in group(items):
+        if g["key"] in exclude:
+            continue
+        lead = max(g["members"], key=lambda i: WEIGHT.get(i["source"], 0) * (1 - i["rank"] / 50))["source"]
+        if per_source.get(lead, 0) >= MAX_PER_SOURCE:
+            continue
+        per_source[lead] = per_source.get(lead, 0) + 1
+        picks.append(g)
+        if len(picks) == n:
+            break
+    return picks
+
+
+_PROMPT = """개발자 친구들 디스코드에 올릴 오늘의 IT·개발 소식이야. 각 항목을 한국어로 정리해.
+- title: 무슨 소식인지 바로 알 수 있는 한국어 제목. 40자 이내. 제품·회사 이름은 원래 표기 그대로.
+- summary: 핵심을 한국어 한 문장으로. 60자 이내. 과장하지 말고, 모르는 내용은 지어내지 마.
+- relevant: 개발·IT·AI·스타트업·테크 업계 소식이면 true. 정치·연예·일반 사회 뉴스처럼 개발자와 상관없으면 false.
+릴리스 노트면 눈에 띄는 변경 한두 개만 짚어.
+
+items: {items}"""
+
+_SCHEMA = {
+    "type": "object",
+    "properties": {"items": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "summary": {"type": "string"},
+                       "relevant": {"type": "boolean"}},
+        "required": ["id", "title", "summary", "relevant"],
+    }}},
+    "required": ["items"],
+}
+
+
+def summarize(entries: list[dict]) -> dict[str, dict]:
+    """entries: id, title. {id: {title, summary, relevant}}. 실패하면 빈 dict (원래 제목으로 올린다)."""
+    if not entries or not os.environ.get("GEMINI_API_KEY"):
+        return {}
+    from google import genai
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": 90_000})  # ms
+    prompt = _PROMPT.format(items=json.dumps(entries, ensure_ascii=False))
+    for model in (MODEL, FALLBACK_MODEL):
+        try:
+            resp = client.models.generate_content(model=model, contents=prompt, config={
+                "response_mime_type": "application/json", "response_schema": _SCHEMA})
+            return {i["id"]: i for i in json.loads(resp.text)["items"]}
+        except Exception as exc:
+            logger.warning("summarize with %s failed: %s", model, exc)
+    return {}
+
