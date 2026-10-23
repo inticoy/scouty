@@ -14,7 +14,7 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 load_dotenv()
 
-from . import digest, discord, pages, sources
+from . import digest, discord, pages, sources, voice
 from .sources import SOURCE_NAMES
 from .store import KST, Store
 
@@ -132,6 +132,13 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
         rest.append(_container("### 📺 새 영상", cards, COLOR["videos"]))
     rest.append({"type": 10, "content": "-# 번호로 이야기해 주세요. 예: \"2번 써봤는데…\""})
     messages.append({"components": rest})
+
+    # 이례적인 소식이 있을 때만 Scouty가 카드 아래에 친구처럼 한마디 (평범한 날은 조용히)
+    unusual = [{"n": rank, "tier": t, "title": ko.get(g["key"], {}).get("title") or g["head"]["title"],
+                "summary": ko.get(g["key"], {}).get("summary", "")}
+               for rank, g in enumerate(picks, 1) if (t := digest.tier(g))]
+    if lines := voice.comment(unusual):
+        messages.append({"content": "\n".join(lines)})
 
     keys = [g["key"] for g in picks] + [digest.url_key(i["url"]) for i in official + videos]
     return title, messages, keys

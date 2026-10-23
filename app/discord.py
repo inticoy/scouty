@@ -30,9 +30,10 @@ def _post(path: str, payload: dict) -> dict:
 
 
 def create_post(forum_id: str, title: str, messages: list[dict], tags: list[str] | None = None) -> str:
-    """포럼에 글을 만들고 나머지 메시지를 이어 쓴다. messages는 Components V2 payload. 글(스레드) ID."""
-    def v2(message: dict) -> dict:
-        return message | {"flags": FLAGS, "allowed_mentions": {"parse": []}}
+    """포럼에 글을 만들고 나머지 메시지를 이어 쓴다. 글(스레드) ID."""
+    def v2(message: dict) -> dict:  # 카드는 Components V2, Scouty 한마디는 일반 메시지
+        flags = SUPPRESS_NOTIFICATIONS if "content" in message else FLAGS
+        return message | {"flags": flags, "allowed_mentions": {"parse": []}}
     payload = {"name": title[:100], "message": v2(messages[0])}
     if tags:
         payload["applied_tags"] = tags

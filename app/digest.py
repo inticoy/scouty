@@ -42,6 +42,20 @@ def group(items: list) -> list:
     return sorted(groups.values(), key=lambda g: g["score"], reverse=True)
 
 
+def tier(g: dict) -> str | None:
+    """Scouty가 한마디 할 만큼 이례적인지: '대박'·'논란'·None. 기준은 우리끼리만 쓰고 디스코드에는 말하지 않는다."""
+    best = {s: max((i for i in g["members"] if i["source"] == s), key=lambda i: i["points"], default=None) for s in WEIGHT}
+    hn, gn = best["hackernews"], best["geeknews"]
+    # 기준은 지난 일주일 글로 맞췄다: HN 첫 화면 글이 대개 400~800, 긱뉴스 인기 글이 10~30
+    if hn and hn["comments"] >= 300 and hn["comments"] > hn["points"]:  # 추천보다 댓글이 많으면 싸우는 중
+        return "논란"
+    if (hn and hn["points"] >= 1000) or (gn and gn["points"] >= 30):
+        return "대박"
+    if hn and gn and hn["points"] >= 500 and gn["points"] >= 15:  # 긱뉴스 번역 글은 흔해서, 둘 다 뜨거울 때만
+        return "대박"
+    return None
+
+
 def top(items: list, n: int, exclude: set) -> list:
     picks, per_source = [], {}
     for g in group(items):
