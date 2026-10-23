@@ -137,8 +137,8 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
     unusual = [{"n": rank, "tier": t, "title": ko.get(g["key"], {}).get("title") or g["head"]["title"],
                 "summary": ko.get(g["key"], {}).get("summary", "")}
                for rank, g in enumerate(picks, 1) if (t := digest.tier(g))]
-    if lines := voice.comment(unusual):
-        messages.append({"content": "\n".join(lines)})
+    # 사람이 채팅하듯 한 줄씩 따로 보낸다
+    messages += [{"content": line} for line in voice.comment(unusual)]
 
     keys = [g["key"] for g in picks] + [digest.url_key(i["url"]) for i in official + videos]
     return title, messages, keys
