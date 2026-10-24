@@ -84,28 +84,40 @@ def hackernews(since: datetime, until: datetime | None = None, **_) -> list:
 
 
 def reddit(since: datetime, subreddits: list = (), until: datetime | None = None, **_) -> list:
-    """RSS에는 추천 수가 없어서 '오늘 TOP' 순서를 순위로 쓴다. 서브레딧 하나가 막혀도 나머지는 읽는다."""
+    """RSS에는 추천 수가 없어서 '오늘 TOP' 순서를 순위로 쓴다.
+
+    서브레딧마다 따로 부르면 두 번째부터 429가 나서, r/a+b+c 한 번으로 받아 서브레딧별로 나눈다.
+    """
     items = []
-    if until and until < datetime.now(KST) - timedelta(hours=12):
+    if not subreddits or (until and until < datetime.now(KST) - timedelta(hours=12)):
         return items  # 지난 날짜의 TOP은 RSS로 알 수 없다
-    for n, sub in enumerate(subreddits):
-        if n:
-            time.sleep(3)  # 연달아 부르면 429
+    url = f"https://www.reddit.com/r/{'+'.join(subreddits)}/top/.rss"
+    for attempt in range(2):
         try:
-            root = ET.fromstring(_get(f"https://www.reddit.com/r/{sub}/top/.rss", t="day", limit=10).content)
+            root = ET.fromstring(_get(url, t="day", limit=100).content)
+            break
         except Exception as exc:
-            logger.warning("reddit r/%s: %s", sub, exc)
+            logger.warning("reddit: %s", exc)
+            if attempt:
+                return items
+            time.sleep(10)
+    names = {sub.lower(): sub for sub in subreddits}
+    ranks = {}
+    for entry in root.findall(f"{ATOM}entry"):
+        category = entry.find(f"{ATOM}category")
+        sub = names.get((category.get("term") if category is not None else "").lower())
+        if not sub or ranks.get(sub, 0) >= 10:
             continue
-        for rank, entry in enumerate(root.findall(f"{ATOM}entry")):
-            published = _date(entry.findtext(f"{ATOM}published") or entry.findtext(f"{ATOM}updated"))
-            link = entry.find(f"{ATOM}link").get("href")
-            # 링크 글이면 본문의 [link]가 원문, 아니면 레딧 글 자체
-            content = unescape(entry.findtext(f"{ATOM}content") or "")
-            outbound = re.search(r'<a href="([^"]+)">\[link\]</a>', content)
-            url = outbound[1] if outbound and "reddit.com" not in outbound[1] else link
-            items.append({"id": entry.findtext(f"{ATOM}id"), "source": "reddit", "sub": sub,
-                          "title": entry.findtext(f"{ATOM}title"), "url": url, "discuss": link,
-                          "points": 0, "comments": 0, "published": published, "rank": rank})
+        rank = ranks[sub] = ranks.get(sub, 0) + 1
+        published = _date(entry.findtext(f"{ATOM}published") or entry.findtext(f"{ATOM}updated"))
+        link = entry.find(f"{ATOM}link").get("href")
+        # 링크 글이면 본문의 [link]가 원문, 아니면 레딧 글 자체
+        content = unescape(entry.findtext(f"{ATOM}content") or "")
+        outbound = re.search(r'<a href="([^"]+)">\[link\]</a>', content)
+        url = outbound[1] if outbound and "reddit.com" not in outbound[1] else link
+        items.append({"id": entry.findtext(f"{ATOM}id"), "source": "reddit", "sub": sub,
+                      "title": entry.findtext(f"{ATOM}title"), "url": url, "discuss": link,
+                      "points": 0, "comments": 0, "published": published, "rank": rank - 1})
     return [i for i in items if i["published"] is None or i["published"] >= since]
 
 
