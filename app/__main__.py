@@ -14,7 +14,7 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 load_dotenv()
 
-from . import digest, discord, pages, sources, voice
+from . import digest, discord, monitoring, pages, sources, voice
 from .sources import SOURCE_NAMES
 from .store import KST, Store
 
@@ -73,6 +73,11 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
     videos, failed3 = sources.collect(["youtube"] if dest.get("videos") else [], since, until, channels=dest.get("videos", {}))
     if failed + failed2 + failed3:
         logger.warning("failed sources: %s", failed + failed2 + failed3)
+    for name in dest["community"] + dest.get("official", []) + (["youtube"] if dest.get("videos") else []):
+        if name in failed + failed2 + failed3:
+            monitoring.observe("source." + name, "degraded", "fetch-failed", f"{SOURCE_NAMES.get(name, name)} 소식을 못 읽었어요 — 나머지로 올렸어요", "출처 접근 제한·주소 변경 확인")
+        else:
+            monitoring.observe("source." + name)
 
     exclude = store.posted_keys(dest["id"])
     n = dest.get("top", 5)
@@ -190,14 +195,20 @@ def due(dest: dict, store: Store, now: datetime) -> list[str]:
 
 def cycle(dry_run: bool) -> bool:
     store, ok = Store(), True
+    if not dry_run:
+        monitoring.begin()
     for dest in destinations():
         for key in due(dest, store, datetime.now(KST)):
             try:
                 if post(dest, store, dry_run) and not dry_run:
                     store.set_meta(key, datetime.now(KST).isoformat(timespec="seconds"))
-            except Exception:  # 한 목적지가 실패해도 나머지는 올리고, 다음 실행에서 다시 시도한다
+                monitoring.observe("post." + dest["id"])
+            except Exception as exc:  # 한 목적지가 실패해도 나머지는 올리고, 다음 실행에서 다시 시도한다
                 logger.exception("%s failed", dest["id"])
+                monitoring.error("post." + dest["id"], exc, f"{dest['name']} 글 올리기 실패 — 다음 실행에서 이어서 보내요", severity="failure")
                 ok = False
+    if not dry_run and os.environ.get("MONITOR_ENDPOINT") and not monitoring.finish("scouty"):
+        ok = False
     return ok
 
 

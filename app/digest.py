@@ -5,6 +5,8 @@ import logging
 import os
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
+from . import monitoring
+
 logger = logging.getLogger(__name__)
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
@@ -144,8 +146,12 @@ def summarize(entries: list[dict]) -> tuple[dict[str, dict], dict | None]:
         try:
             resp = client.models.generate_content(model=model, contents=prompt, config={
                 "response_mime_type": "application/json", "response_schema": _SCHEMA})
-            return _clean(json.loads(resp.text), {e["id"] for e in entries})
+            result = _clean(json.loads(resp.text), {e["id"] for e in entries})
+            monitoring.observe("gemini")
+            return result
         except Exception as exc:
             logger.warning("summarize with %s failed: %s", model, str(exc)[:200])
+            failure = exc
+    monitoring.error("gemini", failure, "Gemini 요약 실패 — 원래 제목으로 올렸어요", "Gemini 한도·키 확인")
     return {}, None
 

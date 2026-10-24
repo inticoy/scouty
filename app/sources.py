@@ -99,7 +99,7 @@ def reddit(since: datetime, subreddits: list = (), until: datetime | None = None
         except Exception as exc:
             logger.warning("reddit: %s", exc)
             if attempt:
-                return items
+                raise  # 실패한 출처로 기록되게
             time.sleep(10)
     names = {sub.lower(): sub for sub in subreddits}
     ranks = {}

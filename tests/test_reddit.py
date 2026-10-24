@@ -27,9 +27,13 @@ def test_one_request_split_by_subreddit(monkeypatch):
     assert items[0]["url"].startswith("https://example.org/")
 
 
-def test_gives_up_quietly_after_retry(monkeypatch):
+def test_failure_after_retry_counts_as_a_failed_source(monkeypatch):
+    calls = []
+
     def fail(url, **params):
+        calls.append(url)
         raise OSError("429")
     monkeypatch.setattr(sources, "_get", fail)
     monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
-    assert sources.reddit(datetime.now(sources.KST) - timedelta(days=1), ["ClaudeAI"]) == []
+    items, failed = sources.collect(["reddit"], datetime.now(sources.KST) - timedelta(days=1), subreddits=["ClaudeAI"])
+    assert (items, failed, len(calls)) == ([], ["reddit"], 2)
