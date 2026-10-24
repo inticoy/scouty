@@ -3,7 +3,7 @@ import json
 import re
 import logging
 import os
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +13,8 @@ FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite"
 WEIGHT = {"hackernews": 1.0, "geeknews": 1.0, "reddit": 0.7}
 CROSS_BONUS = 0.4  # 다른 커뮤니티에도 올라왔으면 화제성이 높다
 MAX_PER_SOURCE = 3
+TRACKING_PARAMS = {"ref", "ref_src", "fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid",
+                   "si", "source", "igshid", "yclid", "gbraid", "wbraid", "_ga", "_gl"}
 
 
 def url_key(url: str) -> str:
@@ -21,7 +23,10 @@ def url_key(url: str) -> str:
     path = parts.path.rstrip("/")
     if "youtube.com" in host or "news.hada.io" in host or "ycombinator" in host:
         return f"{host}{path}?{parts.query}"
-    return f"{host}{path}"
+    params = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+              if not key.lower().startswith("utm_") and key.lower() not in TRACKING_PARAMS]
+    query = urlencode(sorted(params, key=lambda pair: pair[0]))
+    return f"{host}{path}" + (f"?{query}" if query else "")
 
 
 def group(items: list) -> list:

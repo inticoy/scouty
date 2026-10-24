@@ -64,8 +64,8 @@ def _container(title: str, cards: list[dict], color: int, extra: list[dict] = ()
     return {"type": 17, "accent_color": color, "components": items + list(extra)}
 
 
-def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], list[str]] | None:
-    """(글 제목, 메시지 payload들, 올렸다고 기록할 키). 올릴 게 없으면 None."""
+def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], list[list[str]]] | None:
+    """(글 제목, 메시지 payload들, 메시지별로 기록할 키). 올릴 게 없으면 None."""
     since = now - timedelta(hours=24)
     until = now if now < datetime.now(KST) - timedelta(hours=1) else None  # 지난 날짜로 만들 때
     community, failed = sources.collect(dest["community"], since, until, subreddits=dest.get("reddit", []))
@@ -140,25 +140,41 @@ def build(dest: dict, store: Store, now: datetime) -> tuple[str, list[dict], lis
     # 사람이 채팅하듯 한 줄씩 따로 보낸다
     messages += [{"content": line} for line in voice.comment(unusual)]
 
-    keys = [g["key"] for g in picks] + [digest.url_key(i["url"]) for i in official + videos]
+    keys = ([[g["key"] for g in picks]] if picks else [])
+    keys += [[digest.url_key(i["url"]) for i in official + videos]]
+    keys += [[] for _ in messages[len(keys):]]
     return title, messages, keys
 
 
 def post(dest: dict, store: Store, dry_run: bool, now: datetime | None = None) -> bool:
-    built = build(dest, store, now or datetime.now(KST))
-    if built is None:
-        logger.warning("%s — 올릴 소식 없음", dest["name"])
-        return False
-    title, messages, keys = built
+    now = now or datetime.now(KST)
+    date = now.date().isoformat()
+    delivery = None if dry_run else store.get_delivery(dest["id"], date)
+    if delivery is None:
+        built = build(dest, store, now)
+        if built is None:
+            logger.warning("%s — 올릴 소식 없음", dest["name"])
+            return False
+        title, messages, keys = built
+        delivery = {"title": title, "messages": messages, "keys": keys, "thread": None, "sent": 0}
+        if not dry_run:
+            store.save_delivery(dest["id"], date, delivery)
+    title, messages, keys = delivery["title"], delivery["messages"], delivery["keys"]
     if dry_run:
         PREVIEW.parent.mkdir(parents=True, exist_ok=True)
         PREVIEW.write_text(json.dumps({"title": title, "messages": messages}, ensure_ascii=False, indent=1))
         print(f"[DRY RUN] {title}: {len(messages)} messages → {PREVIEW}")
         return True
-    channel = os.environ[dest["channel_env"]]
-    thread = discord.create_post(channel, title, messages, dest.get("tags"))
-    store.mark_posted(dest["id"], keys)
-    logger.info("%s — posted thread %s (%d items)", dest["name"], thread, len(keys))
+    if delivery["thread"] is None:
+        channel = os.environ[dest["channel_env"]]
+        delivery["thread"] = discord.create_post(channel, title, messages[0], dest.get("tags"))
+        delivery["sent"] = 1
+        store.save_delivery(dest["id"], date, delivery, keys[0])
+    for index in range(delivery["sent"], len(messages)):
+        discord.send_message(delivery["thread"], messages[index])
+        delivery["sent"] = index + 1
+        store.save_delivery(dest["id"], date, delivery, keys[index])
+    logger.info("%s — posted thread %s (%d items)", dest["name"], delivery["thread"], sum(map(len, keys)))
     return True
 
 
@@ -211,4 +227,5 @@ def main():
         parser.print_help()
 
 
-main()
+if __name__ == "__main__":
+    main()

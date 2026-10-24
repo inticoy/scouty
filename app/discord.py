@@ -29,16 +29,20 @@ def _post(path: str, payload: dict) -> dict:
     return {}
 
 
-def create_post(forum_id: str, title: str, messages: list[dict], tags: list[str] | None = None) -> str:
-    """포럼에 글을 만들고 나머지 메시지를 이어 쓴다. 글(스레드) ID."""
-    def v2(message: dict) -> dict:  # 카드는 Components V2, Scouty 한마디는 일반 메시지
-        flags = SUPPRESS_NOTIFICATIONS if "content" in message else FLAGS
-        return message | {"flags": flags, "allowed_mentions": {"parse": []}}
-    payload = {"name": title[:100], "message": v2(messages[0])}
+def _v2(message: dict) -> dict:  # 카드는 Components V2, Scouty 한마디는 일반 메시지
+    flags = SUPPRESS_NOTIFICATIONS if "content" in message else FLAGS
+    return message | {"flags": flags, "allowed_mentions": {"parse": []}}
+
+
+def create_post(forum_id: str, title: str, message: dict, tags: list[str] | None = None) -> str:
+    """첫 메시지로 포럼 글을 만들고 글(스레드) ID를 돌려준다."""
+    payload = {"name": title[:100], "message": _v2(message)}
     if tags:
         payload["applied_tags"] = tags
     thread = _post(f"/channels/{forum_id}/threads", payload)
-    for message in messages[1:]:
-        time.sleep(1)
-        _post(f"/channels/{thread['id']}/messages", v2(message))
     return thread["id"]
+
+
+def send_message(thread_id: str, message: dict):
+    time.sleep(1)
+    _post(f"/channels/{thread_id}/messages", _v2(message))

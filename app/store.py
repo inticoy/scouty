@@ -1,4 +1,5 @@
 """올린 소식·시간대 기록 (SQLite). 같은 소식을 며칠 안에 다시 올리지 않으려고."""
+import json
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -49,3 +50,15 @@ class Store:
     def set_meta(self, key: str, value: str):
         self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
         self.db.commit()
+
+    def get_delivery(self, destination: str, date: str) -> dict | None:
+        value = self.get_meta(f"delivery:{destination}:{date}")
+        return json.loads(value) if value else None
+
+    def save_delivery(self, destination: str, date: str, delivery: dict, keys: list[str] = ()):
+        # 메시지 진행 상태와 해당 소식의 중복 방지 기록을 함께 저장한다
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                            (f"delivery:{destination}:{date}", json.dumps(delivery, ensure_ascii=False)))
+            self.db.executemany("INSERT OR REPLACE INTO posted (destination, key, posted_at) VALUES (?, ?, ?)",
+                                [(destination, key, _now()) for key in keys])
