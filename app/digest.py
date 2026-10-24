@@ -1,5 +1,6 @@
 """커뮤니티 소식 묶기·순위, Gemini 한국어 요약."""
 import json
+import re
 import logging
 import os
 from urllib.parse import urlsplit
@@ -103,6 +104,27 @@ _SCHEMA = {
 }
 
 
+_LINK = re.compile(r"\(?https?://\S+|www\.\S+|<[^>]*>|[\[\]`]")
+
+
+def plain(text, limit: int) -> str:
+    """Gemini가 만든 글은 원문(남이 쓴 글)에 휘둘릴 수 있다: 링크·마크다운·멘션 없이 정해진 길이의 글만 남긴다."""
+    text = _LINK.sub("", str(text or "")).replace("@", "＠")
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def _clean(data: dict, ids: set[str]) -> tuple[dict[str, dict], dict | None]:
+    items = {}
+    for item in data.get("items", []):
+        if item.get("id") in ids:
+            items[item["id"]] = item | {"title": plain(item.get("title"), 60), "summary": plain(item.get("summary"), 90)}
+    headline = data.get("headline")
+    if not headline or headline.get("id") not in ids:
+        return items, None
+    return items, {"id": headline["id"], "title": plain(headline.get("title"), 35), "line": plain(headline.get("line"), 90)}
+
+
 def summarize(entries: list[dict]) -> tuple[dict[str, dict], dict | None]:
     """entries: id, kind(community/official), title, text. ({id: {title, summary, relevant, major}}, headline).
 
@@ -117,8 +139,7 @@ def summarize(entries: list[dict]) -> tuple[dict[str, dict], dict | None]:
         try:
             resp = client.models.generate_content(model=model, contents=prompt, config={
                 "response_mime_type": "application/json", "response_schema": _SCHEMA})
-            data = json.loads(resp.text)
-            return {i["id"]: i for i in data["items"]}, data.get("headline")
+            return _clean(json.loads(resp.text), {e["id"] for e in entries})
         except Exception as exc:
             logger.warning("summarize with %s failed: %s", model, str(exc)[:200])
     return {}, None

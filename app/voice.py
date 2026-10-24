@@ -3,6 +3,8 @@ import json
 import logging
 import os
 
+from .digest import plain
+
 logger = logging.getLogger(__name__)
 
 MODELS = (os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"), os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite"))
@@ -40,7 +42,7 @@ def comment(items: list[dict]) -> list[str]:
         try:
             resp = client.models.generate_content(model=model, contents=prompt, config={
                 "response_mime_type": "application/json", "response_schema": _SCHEMA})
-            return json.loads(resp.text)["lines"][:2]
+            return [line for line in (plain(text, 120) for text in json.loads(resp.text)["lines"][:2]) if line]
         except Exception as exc:
             logger.warning("comment with %s failed: %s", model, str(exc)[:200])
     return []
